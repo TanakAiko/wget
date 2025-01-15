@@ -4,7 +4,7 @@ use wget::{Args, Downloader, WgetResult};
 #[tokio::main]
 async fn main() -> WgetResult<()> {
     let args = Args::parse();
-    let downloader = Downloader::new(args);
+    let mut downloader = Downloader::new(args).await?;
     downloader.download_all().await?;
     Ok(())
 }

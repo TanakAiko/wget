@@ -15,7 +15,8 @@ pub type WgetResult<T> = Result<T, Box<dyn Error>>;
 
 // Fonctions utilitaires qui peuvent être utilisées dans tout le projet
 pub mod utils {
-    use indicatif::{ProgressBar, ProgressStyle};  // Ajout de l'import ici
+    use indicatif::{ProgressBar, ProgressStyle};
+    use std::io::{self, Write};
 
     pub fn extract_filename_from_url(url: &str) -> String {
         url.split('/')
@@ -37,9 +38,26 @@ pub mod utils {
     pub fn create_progress_bar(total_size: u64) -> ProgressBar {
         let pb = ProgressBar::new(total_size);
         pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta}) {msg}")
+            .template("{prefix:.bold} {spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta}) {msg}")
             .unwrap()
             .progress_chars("#>-"));
         pb
+    }
+
+    pub struct BackgroundLogger {
+        file: std::fs::File,
+    }
+
+    impl BackgroundLogger {
+        pub fn new(path: &str) -> io::Result<Self> {
+            Ok(Self {
+                file: std::fs::File::create(path)?,
+            })
+        }
+
+        pub fn log(&mut self, message: &str) -> io::Result<()> {
+            writeln!(self.file, "{}", message)?;
+            self.file.flush()
+        }
     }
 }
