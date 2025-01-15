@@ -4,4 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = "4.5.26"
+tokio = { version = "1.32", features = ["full"] }
+reqwest = { version = "0.12.12", features = ["stream", "json"] }
+clap = { version = "4.4", features = ["derive"] }
+indicatif = "0.17"
+futures-util = "0.3"
+chrono = "0.4"
