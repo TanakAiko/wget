@@ -2,6 +2,7 @@ use std::error::Error;
 
 pub mod args;
 pub mod downloader;
+pub mod mirror;
 
 pub use args::Args;
 pub use downloader::Downloader;

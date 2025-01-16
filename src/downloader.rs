@@ -1,4 +1,8 @@
+<<<<<<< Updated upstream
 use crate::{utils, Args, WgetResult};
+=======
+use crate::{mirror::WebsiteMirror, utils, Args, WgetResult};
+>>>>>>> Stashed changes
 use chrono::Local;
 use futures_util::StreamExt;
 use indicatif::MultiProgress;
@@ -56,6 +60,7 @@ impl Downloader {
             println!("Output will be written to \"wget-log\"");
         }
 
+<<<<<<< Updated upstream
         let start_time = Local::now();
         self.logln(&format!(
             "start at {}",
@@ -82,6 +87,51 @@ impl Downloader {
             Local::now().format("%Y-%m-%d %H:%M:%S")
         ))
         .await?;
+=======
+        if self.args.mirror {
+            self.mirror_websites().await?;
+        } else {
+            let start_time = Local::now();
+            self.log(&format!("start at {}", start_time.format("%Y-%m-%d %H:%M:%S"))).await?;
+            
+            let m = if !self.args.background {
+                Some(MultiProgress::new())
+            } else {
+                None
+            };
+        
+            let rate_limit = self.parse_rate_limit()?;
+            
+            // Créer un clone des URLs pour éviter le problème de borrowing
+            let urls: Vec<String> = self.args.urls.clone();
+        
+            for (index, url) in urls.iter().enumerate() {
+                self.download_file(
+                    url,
+                    index,
+                    rate_limit,
+                    m.as_ref()
+                ).await?;
+            }
+        
+            self.log(&format!("finished at {}", Local::now().format("%Y-%m-%d %H:%M:%S"))).await?;
+        }
+        Ok(())
+    
+    }
+
+    async fn mirror_websites(&self) -> WgetResult<()> {
+        for url in &self.args.urls {
+            println!("Mirroring website: {}", url);
+            let mut mirror = WebsiteMirror::new(
+                url.clone(),
+                self.args.get_rejected_extensions(),
+                self.args.get_excluded_paths(),
+                self.args.convert_links,
+            )?;
+            mirror.start().await?;
+        }
+>>>>>>> Stashed changes
         Ok(())
     }
 

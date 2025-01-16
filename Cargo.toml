@@ -10,3 +10,6 @@ clap = { version = "4.4", features = ["derive"] }
 indicatif = "0.17"
 futures-util = "0.3"
 chrono = "0.4"
+scraper = "0.22.0"        # Pour le parsing HTML
+url = "2.4"             # Pour la manipulation des URLs
+regex = "1.9"           # Pour les patterns de rejet
