@@ -124,8 +124,10 @@ impl Downloader {
         let mut unique_index = 1;
         while dest_path.exists() {
             filename = match &self.args.output {
-                Some(name) => add_suffix_before_extension(&name, &format!("_{}", unique_index)),
-                None => add_suffix_before_extension(
+                Some(name) => {
+                    utils::add_suffix_before_extension(&name, &format!("_{}", unique_index))
+                }
+                None => utils::add_suffix_before_extension(
                     &utils::extract_filename_from_url(url),
                     &format!("_{}", unique_index),
                 ),
@@ -232,14 +234,5 @@ impl Downloader {
         } else {
             Ok(None)
         }
-    }
-}
-
-fn add_suffix_before_extension(filename: &str, suffix: &str) -> String {
-    if let Some(pos) = filename.rfind('.') {
-        let (name, ext) = filename.split_at(pos);
-        format!("{}{}{}", name, suffix, ext)
-    } else {
-        format!("{}{}", filename, suffix)
     }
 }

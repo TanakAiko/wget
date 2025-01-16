@@ -1,8 +1,4 @@
-// use clap::Parser;
 use std::error::Error;
-// use indicatif::{ProgressBar, ProgressStyle};
-// use chrono::Local;
-// use reqwest;
 
 pub mod args;
 pub mod downloader;
@@ -16,13 +12,9 @@ pub type WgetResult<T> = Result<T, Box<dyn Error>>;
 // Fonctions utilitaires qui peuvent être utilisées dans tout le projet
 pub mod utils {
     use indicatif::{ProgressBar, ProgressStyle};
-    use std::io::{self, Write};
 
     pub fn extract_filename_from_url(url: &str) -> String {
-        url.split('/')
-            .last()
-            .unwrap_or("download")
-            .to_string()
+        url.split('/').last().unwrap_or("download").to_string()
     }
 
     pub fn format_size(size: u64) -> String {
@@ -44,20 +36,12 @@ pub mod utils {
         pb
     }
 
-    pub struct BackgroundLogger {
-        file: std::fs::File,
-    }
-
-    impl BackgroundLogger {
-        pub fn new(path: &str) -> io::Result<Self> {
-            Ok(Self {
-                file: std::fs::File::create(path)?,
-            })
-        }
-
-        pub fn log(&mut self, message: &str) -> io::Result<()> {
-            writeln!(self.file, "{}", message)?;
-            self.file.flush()
+    pub fn add_suffix_before_extension(filename: &str, suffix: &str) -> String {
+        if let Some(pos) = filename.rfind('.') {
+            let (name, ext) = filename.split_at(pos);
+            format!("{}{}{}", name, suffix, ext)
+        } else {
+            format!("{}{}", filename, suffix)
         }
     }
 }
