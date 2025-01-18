@@ -1,8 +1,4 @@
-<<<<<<< Updated upstream
-use crate::{utils, Args, WgetResult};
-=======
 use crate::{mirror::WebsiteMirror, utils, Args, WgetResult};
->>>>>>> Stashed changes
 use chrono::Local;
 use futures_util::StreamExt;
 use indicatif::MultiProgress;
@@ -11,13 +7,24 @@ use std::env;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::task;
 use tokio::time::sleep;
 
 pub struct Downloader {
     args: Args,
     client: reqwest::Client,
     output_file: Option<File>,
+}
+
+impl Clone for Downloader {
+    fn clone(&self) -> Self {
+        Downloader {
+            args: self.args.clone(),
+            client: self.client.clone(),
+            output_file: None, // ignore output_file in the copy
+        }
+    }
 }
 
 impl Downloader {
@@ -60,64 +67,59 @@ impl Downloader {
             println!("Output will be written to \"wget-log\"");
         }
 
-<<<<<<< Updated upstream
-        let start_time = Local::now();
-        self.logln(&format!(
-            "start at {}",
-            start_time.format("%Y-%m-%d %H:%M:%S")
-        ))
-        .await?;
-
-        let m = if !self.args.background {
-            Some(MultiProgress::new())
-        } else {
-            None
-        };
-
-        let rate_limit = self.parse_rate_limit()?;
-
-        let urls: Vec<String> = self.args.urls.clone();
-
-        for (_, url) in urls.iter().enumerate() {
-            self.download_file(url, rate_limit, m.as_ref()).await?;
-        }
-
-        self.logln(&format!(
-            "finished at {}",
-            Local::now().format("%Y-%m-%d %H:%M:%S")
-        ))
-        .await?;
-=======
         if self.args.mirror {
             self.mirror_websites().await?;
         } else {
             let start_time = Local::now();
-            self.log(&format!("start at {}", start_time.format("%Y-%m-%d %H:%M:%S"))).await?;
-            
+            self.logln(&format!(
+                "start at {}",
+                start_time.format("%Y-%m-%d %H:%M:%S")
+            ))
+            .await?;
+
             let m = if !self.args.background {
                 Some(MultiProgress::new())
             } else {
                 None
             };
-        
+
             let rate_limit = self.parse_rate_limit()?;
-            
+
+            if let Some(input_file) = &self.args.input_file {
+                let urls = Self::read_urls_from_file(input_file).await?;
+                let mut tasks = Vec::new();
+
+                for url in urls {
+                    let mut downloader = self.clone(); // Clone `Self` for each task
+                    let rate_limit = rate_limit.clone();
+
+                    let task = task::spawn(async move {
+                        if let Err(e) = downloader.download_file(&url, rate_limit, None).await {
+                            eprintln!("Failed to download {}: {}", url, e);
+                        }
+                    });
+                    tasks.push(task);
+                }
+
+                for task in tasks {
+                    task.await.unwrap(); // Wait until all the tasks are completed
+                }
+            }
+
             // Créer un clone des URLs pour éviter le problème de borrowing
             let urls: Vec<String> = self.args.urls.clone();
-        
-            for (index, url) in urls.iter().enumerate() {
-                self.download_file(
-                    url,
-                    index,
-                    rate_limit,
-                    m.as_ref()
-                ).await?;
+
+            for (_, url) in urls.iter().enumerate() {
+                self.download_file(url, rate_limit, m.as_ref()).await?;
             }
-        
-            self.log(&format!("finished at {}", Local::now().format("%Y-%m-%d %H:%M:%S"))).await?;
+
+            self.logln(&format!(
+                "finished at {}",
+                Local::now().format("%Y-%m-%d %H:%M:%S")
+            ))
+            .await?;
         }
         Ok(())
-    
     }
 
     async fn mirror_websites(&self) -> WgetResult<()> {
@@ -131,7 +133,6 @@ impl Downloader {
             )?;
             mirror.start().await?;
         }
->>>>>>> Stashed changes
         Ok(())
     }
 
@@ -141,12 +142,17 @@ impl Downloader {
         rate_limit: Option<u64>,
         progress_bars: Option<&MultiProgress>,
     ) -> WgetResult<()> {
-        self.log(&format!("sending request, awaiting response... "))
-            .await?;
+        if self.args.input_file.is_none() {
+            self.log(&format!("sending request, awaiting response... "))
+                .await?;
+        }
+
         let response = self.client.get(url).send().await?;
 
         let status = response.status();
-        self.logln(&format!("status {}", status)).await?;
+        if self.args.input_file.is_none() {
+            self.logln(&format!("status {}", status)).await?;
+        }
 
         if !status.is_success() {
             return Err(format!("Failed with status: {}", status).into());
@@ -170,7 +176,7 @@ impl Downloader {
             None => PathBuf::from(&filename),
         };
 
-        // Vérifier si un fichier avec ce nom existe déjà
+        //Check if a file with this name already exists
         let mut unique_index = 1;
         while dest_path.exists() {
             filename = match &self.args.output {
@@ -191,8 +197,10 @@ impl Downloader {
             unique_index += 1;
         }
 
-        self.logln(&format!("saving file to: {}", dest_path.display()))
-            .await?;
+        if self.args.input_file.is_none() {
+            self.logln(&format!("saving file to: {}", dest_path.display()))
+                .await?;
+        }
 
         let pb = if let Some(mp) = progress_bars {
             let pb = mp.add(utils::create_progress_bar(total_size));
@@ -252,7 +260,7 @@ impl Downloader {
             pb.finish_with_message("completed");
         }
 
-        self.logln(&format!("\nDownloaded [{}]", url)).await?;
+        self.logln(&format!("Downloaded [{}]", url)).await?;
         Ok(())
     }
 
@@ -284,5 +292,26 @@ impl Downloader {
         } else {
             Ok(None)
         }
+    }
+
+    async fn read_urls_from_file(file_path: &str) -> WgetResult<Vec<String>> {
+        // Open the specified file
+        let file = File::open(file_path).await?;
+        let reader = BufReader::new(file);
+
+        // Initializes a vector to store URLs
+        let mut urls = Vec::new();
+
+        // read the line file by line
+        let mut lines = reader.lines();
+        while let Some(line) = lines.next_line().await? {
+            let trimmed = line.trim();
+            // ignore the empty lines
+            if !trimmed.is_empty() {
+                urls.push(trimmed.to_string());
+            }
+        }
+
+        Ok(urls)
     }
 }
