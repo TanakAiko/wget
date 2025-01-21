@@ -251,7 +251,10 @@ impl Downloader {
 
             file.write_all(&chunk).await?;
             downloaded += chunk_size;
+            let percentage = (downloaded as f64 / total_size as f64) * 100.0;
+
             if let Some(pb) = &pb {
+                pb.set_message(format!("{:.2}%", percentage));
                 pb.set_position(downloaded);
             }
         }

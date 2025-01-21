@@ -9,7 +9,6 @@ use url::Url;
 
 pub struct WebsiteMirror {
     client: Client,
-    base_url: Url,
     output_dir: PathBuf,
     visited_urls: HashSet<String>,
     rejected_extensions: HashSet<String>,
@@ -26,12 +25,14 @@ impl WebsiteMirror {
         convert_links: bool,
     ) -> WgetResult<Self> {
         let base_url = Url::parse(&url)?;
-        let domain = base_url.host_str().ok_or("Invalid URL: no host")?.to_string();
+        let domain = base_url
+            .host_str()
+            .ok_or("Invalid URL: no host")?
+            .to_string();
         let output_dir = PathBuf::from(&domain);
 
         Ok(Self {
             client: Client::new(),
-            base_url,
             output_dir,
             visited_urls: HashSet::new(),
             rejected_extensions,
@@ -42,7 +43,7 @@ impl WebsiteMirror {
     }
 
     pub async fn start(&mut self) -> WgetResult<()> {
-        // Créer le répertoire de sortie
+        // create the output directory
         fs::create_dir_all(&self.output_dir).await?;
 
         while let Some(url) = self.queue.pop_front() {
@@ -63,7 +64,7 @@ impl WebsiteMirror {
     async fn process_url(&mut self, url: &str) -> WgetResult<()> {
         println!("Processing: {}", url);
 
-        // Vérifier si l'URL doit être exclue
+        // check if the URL should be excluded
         if self.should_exclude(url) {
             return Ok(());
         }
@@ -75,43 +76,41 @@ impl WebsiteMirror {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
 
-        // Obtenir le chemin relatif pour la sauvegarde
+        // get the relative path for backup
         let relative_path = self.get_relative_path(url)?;
+
         let full_path = self.output_dir.join(&relative_path);
 
-        // Créer les répertoires parents si nécessaire
+        // create parent directories if necessary
         if let Some(parent) = full_path.parent() {
             fs::create_dir_all(parent).await?;
         }
-        
-        
+
         if content_type.contains("text/html") {
-            // Traiter le HTML
             let html_content = response.text().await?;
             let processed_html = self.process_html(&html_content, url)?;
             let mut file = File::create(&full_path).await?;
             file.write_all(processed_html.as_bytes()).await?;
-        } else  if content_type.contains("text/css") || content_type.contains("application/javascript") {
+        } else if content_type.contains("text/css")
+            || content_type.contains("application/javascript")
+        {
             let content = response.bytes().await?;
             let mut file = File::create(&full_path).await?;
             file.write_all(&content).await?;
         } else {
-            // Télécharger le fichier directement
+            // download the file directly
             let content = response.bytes().await?;
             let mut file = File::create(&full_path).await?;
             file.write_all(&content).await?;
         }
-        
-       
+
         Ok(())
     }
-
-    
 
     fn process_html(&mut self, html: &str, base_url: &str) -> WgetResult<String> {
         let document = Html::parse_document(html);
         let base_url = Url::parse(base_url)?;
-    
+
         let selectors = [
             (Selector::parse("a[href]").unwrap(), "href"),
             (Selector::parse("link[href]").unwrap(), "href"),
@@ -120,37 +119,38 @@ impl WebsiteMirror {
             (Selector::parse("link[rel='stylesheet']").unwrap(), "href"),
             (Selector::parse("style").unwrap(), "textContent"),
         ];
-    
+
         let mut processed_html = html.to_string();
-    
+
         for (selector, attr) in selectors.iter() {
             for element in document.select(selector) {
                 if let Some(link) = element.value().attr(attr) {
                     if let Ok(absolute_url) = base_url.join(link) {
                         let url_str = absolute_url.as_str();
-    
-                        // Ajouter l'URL à la queue si elle appartient au même domaine
+
+                        // add the URL to the tail if it belongs to the same domain
                         if absolute_url.host() == base_url.host() {
                             self.queue.push_back(url_str.to_string());
                         }
-    
-                        // Convertir les liens si demandé
+
+                        // convert the links if requested
                         if self.convert_links {
-                            let relative_path = self.get_relative_path(url_str)
+                            let relative_path = self
+                                .get_relative_path(url_str)
                                 .unwrap_or_else(|_| link.to_string().into());
-                            processed_html = processed_html.replace(link, relative_path.to_str().unwrap_or(link));
+                            processed_html = processed_html
+                                .replace(link, relative_path.to_str().unwrap_or(link));
                         }
                     }
                 }
             }
         }
-    
+
         Ok(processed_html)
     }
-    
 
     fn should_exclude(&self, url: &str) -> bool {
-        // Vérifier les extensions rejetées
+        // check the extensions rejected
         if let Ok(url) = Url::parse(url) {
             if let Some(path) = url.path_segments() {
                 if let Some(last) = path.last() {
@@ -164,7 +164,7 @@ impl WebsiteMirror {
                 }
             }
 
-            // Vérifier les chemins exclus
+            // check the excluded paths
             for excluded in &self.excluded_paths {
                 if url.path().starts_with(excluded) {
                     return true;
@@ -179,7 +179,7 @@ impl WebsiteMirror {
         let url = Url::parse(url)?;
         let path = url.path();
         let path = if path == "/" {
-            "index.html".to_string()  // Convertir en String
+            "/index.html".to_string()
         } else if path.ends_with('/') {
             format!("{}index.html", path)
         } else if !path.contains('.') {
