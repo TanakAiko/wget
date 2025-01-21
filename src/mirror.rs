@@ -111,35 +111,71 @@ impl WebsiteMirror {
         let document = Html::parse_document(html);
         let base_url = Url::parse(base_url)?;
 
+        // Regex pour trouver les URLs dans les background-images
+        let bg_regex = regex::Regex::new(r#"url\(['"]?([^'")\s]+)['"]?\)"#).unwrap();
+
         let selectors = [
             (Selector::parse("a[href]").unwrap(), "href"),
             (Selector::parse("link[href]").unwrap(), "href"),
             (Selector::parse("img[src]").unwrap(), "src"),
-            (Selector::parse("script[src]").unwrap(), "src"), // Gérer les fichiers JS
+            (Selector::parse("script[src]").unwrap(), "src"),
             (Selector::parse("link[rel='stylesheet']").unwrap(), "href"),
             (Selector::parse("style").unwrap(), "textContent"),
+            (Selector::parse("[style]").unwrap(), "style"), // Pour les styles inline
         ];
 
         let mut processed_html = html.to_string();
 
         for (selector, attr) in selectors.iter() {
             for element in document.select(selector) {
-                if let Some(link) = element.value().attr(attr) {
-                    if let Ok(absolute_url) = base_url.join(link) {
-                        let url_str = absolute_url.as_str();
+                // Traitement spécial pour les balises style et attributs style
+                if *attr == "textContent" || *attr == "style" {
+                    let css_content = if *attr == "textContent" {
+                        element.inner_html()
+                    } else {
+                        element.value().attr(attr).unwrap_or("").to_string()
+                    };
 
-                        // add the URL to the tail if it belongs to the same domain
-                        if absolute_url.host() == base_url.host() {
-                            self.queue.push_back(url_str.to_string());
+                    // Chercher toutes les URLs dans le CSS
+                    for cap in bg_regex.captures_iter(&css_content) {
+                        if let Some(url_match) = cap.get(1) {
+                            let url = url_match.as_str();
+                            if let Ok(absolute_url) = base_url.join(url) {
+                                //println!("Found background image: {}", url);
+                                let url_str = absolute_url.as_str();
+
+                                if absolute_url.host() == base_url.host() {
+                                    self.queue.push_back(url_str.to_string());
+                                }
+
+                                if self.convert_links {
+                                    let relative_path = self
+                                        .get_relative_path(url_str)
+                                        .unwrap_or_else(|_| url.to_string().into());
+                                    processed_html = processed_html
+                                        .replace(url, relative_path.to_str().unwrap_or(url));
+                                }
+                            }
                         }
+                    }
+                } else {
+                    // Traitement normal des autres attributs
+                    if let Some(link) = element.value().attr(attr) {
+                        if let Ok(absolute_url) = base_url.join(link) {
+                            //println!("Found src: {}", link);
+                            let url_str = absolute_url.as_str();
 
-                        // convert the links if requested
-                        if self.convert_links {
-                            let relative_path = self
-                                .get_relative_path(url_str)
-                                .unwrap_or_else(|_| link.to_string().into());
-                            processed_html = processed_html
-                                .replace(link, relative_path.to_str().unwrap_or(link));
+                            if absolute_url.host() == base_url.host() {
+                                self.queue.push_back(url_str.to_string());
+                            }
+
+                            if self.convert_links {
+                                let relative_path = self
+                                    .get_relative_path(url_str)
+                                    .unwrap_or_else(|_| link.to_string().into());
+                                processed_html = processed_html
+                                    .replace(link, relative_path.to_str().unwrap_or(link));
+                            }
                         }
                     }
                 }
