@@ -5,11 +5,10 @@ use indicatif::MultiProgress;
 use reqwest;
 use std::env;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::task;
-use tokio::time::sleep;
 
 pub struct Downloader {
     args: Args,
@@ -90,7 +89,7 @@ impl Downloader {
                 let mut tasks = Vec::new();
 
                 for url in urls {
-                    let mut downloader = self.clone(); // Clone `Self` for each task
+                    let mut downloader = self.clone(); // clone `Self` for each task
                     let rate_limit = rate_limit.clone();
 
                     let task = task::spawn(async move {
@@ -102,11 +101,11 @@ impl Downloader {
                 }
 
                 for task in tasks {
-                    task.await.unwrap(); // Wait until all the tasks are completed
+                    task.await.unwrap(); // wait until all the tasks are completed
                 }
             }
 
-            // Créer un clone des URLs pour éviter le problème de borrowing
+            // créer un clone des URLs pour éviter le problème de borrowing
             let urls: Vec<String> = self.args.urls.clone();
 
             for (_, url) in urls.iter().enumerate() {
@@ -139,7 +138,7 @@ impl Downloader {
     async fn download_file(
         &mut self,
         url: &str,
-        rate_limit: Option<u64>,
+        _rate_limit: Option<u64>,
         progress_bars: Option<&MultiProgress>,
     ) -> WgetResult<()> {
         if self.args.input_file.is_none() {
@@ -176,7 +175,7 @@ impl Downloader {
             None => PathBuf::from(&filename),
         };
 
-        //Check if a file with this name already exists
+        // check if a file with this name already exists
         let mut unique_index = 1;
         while dest_path.exists() {
             filename = match &self.args.output {
@@ -232,21 +231,29 @@ impl Downloader {
             let chunk = item?;
             let chunk_size = chunk.len() as u64;
 
-            if let Some(rate_limit) = rate_limit {
-                bytes_since_last_check += chunk_size;
-                let elapsed = last_check.elapsed().as_secs_f64();
+            bytes_since_last_check += chunk_size;
+            let elapsed = last_check.elapsed().as_secs_f64();
 
-                if elapsed >= 1.0 {
-                    let current_rate = bytes_since_last_check as f64 / elapsed;
-                    if current_rate > rate_limit as f64 {
-                        let sleep_duration = Duration::from_secs_f64(
-                            (bytes_since_last_check as f64 / rate_limit as f64) - elapsed,
-                        );
-                        sleep(sleep_duration).await;
-                    }
-                    bytes_since_last_check = 0;
-                    last_check = Instant::now();
+            let speed = bytes_since_last_check as f64 / elapsed;
+            if elapsed >= 1.0 {
+
+                // Update the progression bar with speed
+                if let Some(pb) = &pb {
+                    pb.set_message(format!(
+                        "{:.2}%, Speed: {}/s",
+                        (downloaded as f64 / total_size as f64) * 100.0,
+                        utils::format_size(speed as u64)
+                    ));
+                } else {
+                    println!(
+                        "Downloaded: {:.2}%, Speed: {}/s",
+                        (downloaded as f64 / total_size as f64) * 100.0,
+                        utils::format_size(speed as u64)
+                    );
                 }
+
+                bytes_since_last_check = 0;
+                last_check = Instant::now();
             }
 
             file.write_all(&chunk).await?;
@@ -254,7 +261,11 @@ impl Downloader {
             let percentage = (downloaded as f64 / total_size as f64) * 100.0;
 
             if let Some(pb) = &pb {
-                pb.set_message(format!("{:.2}%", percentage));
+                pb.set_message(format!(
+                    "{:.2}%, Speed: {}/s",
+                    percentage,
+                    utils::format_size(speed as u64)
+                ));
                 pb.set_position(downloaded);
             }
         }
