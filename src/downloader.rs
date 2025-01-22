@@ -138,7 +138,7 @@ impl Downloader {
     async fn download_file(
         &mut self,
         url: &str,
-        _rate_limit: Option<u64>,
+        rate_limit: Option<u64>,
         progress_bars: Option<&MultiProgress>,
     ) -> WgetResult<()> {
         if self.args.input_file.is_none() {
@@ -226,41 +226,33 @@ impl Downloader {
         let mut stream = response.bytes_stream();
         let mut last_check = Instant::now();
         let mut bytes_since_last_check: u64 = 0;
+        let max_speed = rate_limit.unwrap_or(10_000_000);
+        let mut speed = 0.0;
+        let delta_time = 0.3;
 
         while let Some(item) = stream.next().await {
             let chunk = item?;
             let chunk_size = chunk.len() as u64;
 
             bytes_since_last_check += chunk_size;
+            downloaded += chunk_size;
+
             let elapsed = last_check.elapsed().as_secs_f64();
-
-            let speed = bytes_since_last_check as f64 / elapsed;
-            if elapsed >= 1.0 {
-
-                // Update the progression bar with speed
-                if let Some(pb) = &pb {
-                    pb.set_message(format!(
-                        "{:.2}%, Speed: {}/s",
-                        (downloaded as f64 / total_size as f64) * 100.0,
-                        utils::format_size(speed as u64)
-                    ));
+            if bytes_since_last_check >= max_speed {
+                if elapsed >= delta_time {
+                    speed = bytes_since_last_check as f64;
+                    bytes_since_last_check = 0;
+                    last_check = Instant::now();
                 } else {
-                    println!(
-                        "Downloaded: {:.2}%, Speed: {}/s",
-                        (downloaded as f64 / total_size as f64) * 100.0,
-                        utils::format_size(speed as u64)
-                    );
+                    let sleep_time = delta_time - elapsed;
+                    tokio::time::sleep(tokio::time::Duration::from_secs_f64(sleep_time)).await;
                 }
-
-                bytes_since_last_check = 0;
-                last_check = Instant::now();
             }
 
             file.write_all(&chunk).await?;
-            downloaded += chunk_size;
-            let percentage = (downloaded as f64 / total_size as f64) * 100.0;
 
             if let Some(pb) = &pb {
+                let percentage = (downloaded as f64 / total_size as f64) * 100.0;
                 pb.set_message(format!(
                     "{:.2}%, Speed: {}/s",
                     percentage,
@@ -274,7 +266,7 @@ impl Downloader {
             pb.finish_with_message("completed");
         }
 
-        self.logln(&format!("Downloaded [{}]", url)).await?;
+        self.logln(&format!("\nDownloaded [{}]", url)).await?;
         Ok(())
     }
 
