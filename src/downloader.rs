@@ -83,6 +83,7 @@ impl Downloader {
             };
 
             let rate_limit = self.parse_rate_limit()?;
+            //println!("rate_limit: {:?}", rate_limit);
 
             if let Some(input_file) = &self.args.input_file {
                 let urls = Self::read_urls_from_file(input_file).await?;
@@ -226,7 +227,6 @@ impl Downloader {
         let mut stream = response.bytes_stream();
         let mut last_check = Instant::now();
         let mut bytes_since_last_check: u64 = 0;
-        let max_speed = rate_limit.unwrap_or(10_000_000);
         let mut speed = 0.0;
         let delta_time = 0.3;
 
@@ -238,14 +238,27 @@ impl Downloader {
             downloaded += chunk_size;
 
             let elapsed = last_check.elapsed().as_secs_f64();
-            if bytes_since_last_check >= max_speed {
+
+            if let Some(max_speed) = rate_limit {
+                // println!(
+                //     "bytes_since_last_check: {}; max_speed: {}",
+                //     bytes_since_last_check, max_speed
+                // );
+                if bytes_since_last_check >= max_speed - 2 * chunk_size {
+                    if elapsed >= delta_time {
+                        speed = bytes_since_last_check as f64;
+                        bytes_since_last_check = 0;
+                        last_check = Instant::now();
+                    } else {
+                        let sleep_time = delta_time - elapsed;
+                        tokio::time::sleep(tokio::time::Duration::from_secs_f64(sleep_time)).await;
+                    }
+                }
+            } else {
                 if elapsed >= delta_time {
                     speed = bytes_since_last_check as f64;
                     bytes_since_last_check = 0;
                     last_check = Instant::now();
-                } else {
-                    let sleep_time = delta_time - elapsed;
-                    tokio::time::sleep(tokio::time::Duration::from_secs_f64(sleep_time)).await;
                 }
             }
 
@@ -289,8 +302,8 @@ impl Downloader {
             let number: u64 = num_str.parse()?;
 
             let bytes_per_sec = match unit.to_lowercase().as_str() {
-                "k" => number * 1024,
-                "m" => number * 1024 * 1024,
+                "k" => number * 1000,
+                "m" => number * 1000 * 1000,
                 _ => return Err("Invalid rate limit unit (use k or M)".into()),
             };
 
